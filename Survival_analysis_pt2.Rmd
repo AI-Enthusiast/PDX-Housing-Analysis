@@ -1,0 +1,200 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-02-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(survival)
+library(survminer)
+library(skimr)
+library(MASS)
+```
+
+
+```{r}
+housing <- read_csv("C:/Users/sveat/Documents/Survival Analysis Homework/Classwork/Week 5/pdx_housing_2020-2021_clean.csv")
+```
+
+
+```{r}
+## Create sold category in Housing:
+housing <- housing %>%
+  mutate(sold = ifelse(housing$homeStatus == "RECENTLY_SOLD", 1, 0))
+```
+
+
+```{r}
+weibullFit <- survreg(Surv(housing$daysOnZillow, housing$sold)~1)
+summary(weibullFit)
+weibullFit$aic
+
+saleTimes = predict(weibullFit, data.frame(x=1),type="quantile",p=seq(0.01,0.99,0.01),se.fit = T)
+
+## Create Weibull
+weibull_graph = tibble(
+  sale_time = seq(0.01,0.99,0.01),
+  time = saleTimes$fit,
+  time.SE = saleTimes$se.fit,
+) %>%
+  ggplot(aes(y = time, x = sale_time)) + 
+  geom_ribbon(aes(x=sale_time,ymin=time-2*time.SE,ymax=time+2*time.SE),fill="gray80") +
+		geom_line(color="darkred",linewidth=1.2) +
+  theme_minimal() + 
+  labs(x = "Cumulative Probability of Sale",
+       y = "Time on Market (Days)",
+       title = "Probability of Sale Given Time on Market") + 
+  scale_x_continuous(labels=scales::percent_format()) +
+		coord_flip()
+weibull_graph
+
+## Create KM
+km = survfit(Surv(housing$daysOnZillow, housing$sold)~1)
+km.ds = tibble(time=km$time,sale_time=1-km$surv)
+
+## Overlay KM
+weibull_graph +
+  geom_line(data=km.ds,aes(x=sale_time,y=time))
+```
+
+```{r}
+km = survfit(Surv(housing$daysOnZillow, housing$sold)~1)
+survprob = km$surv
+survtime = km$time
+
+tibble(
+  logLogSurvProb=log(-log(survprob)),
+  logSurvTime=log(survtime)) %>%
+ggplot(aes(x=logSurvTime,y=logLogSurvProb)) +
+geom_point(color="cyan4") + 
+  theme_minimal() + 
+  labs(title = "Weibull Plot", 
+       subtitle = "Fits a linear relationship with some margin of error",
+       y = "Log(log(Survival Probability))", 
+       x = "Log(Survival Time)")
+```
+This isn't a perfect fit, but isn't an absolutely horrible fit.
+
+```{r}
+weibull_housing <- survreg(Surv(housing$daysOnZillow, housing$sold) ~ price, data = housing)
+summary(weibull_housing)
+
+housing1 = housing
+
+median(housing$price)
+
+housing1 = housing1 %>%
+  mutate(greater_than_median = ifelse(housing1$price > median(housing1$price), 1, 0))
+
+weibull_price_med <- survreg(Surv(housing1$daysOnZillow, housing1$sold) ~ greater_than_median, data = housing1)
+
+summary(weibull_price_med)
+
+pred_medPrice = predict(weibull_price_med,newdata=data.frame(greater_than_median = unique(housing1$greater_than_median)),type="quantile",p=seq(0.01,0.99,0.01),se.fit = T)
+
+pred_fit_medPrice = tibble(quantile=seq(0.01,0.99,0.01),	as.data.frame(t(pred_medPrice$fit)))
+names(pred_fit_medPrice)=c("p",unique(housing1$greater_than_median))
+
+pred_fit_medPrice %>%
+  pivot_longer(`0`:`1`, names_to = "Price", values_to = "Sold") %>%
+  ggplot(aes(x = Sold, y = rev(p), color = Price)) + 
+  geom_line(linewidth = 1.1) + 
+  theme_minimal() + 
+  scale_color_manual(labels = c("Below Median", "Above Median"), values = c("cyan4", "darkred")) + 
+  labs(y = "P(Sale)", 
+       x = "Time Until Sale",
+       title = "Sale Time by Pricing -- Separate Shapes")
+
+```
+
+```{r}
+
+housing2 <- housing %>%
+  drop_na(c('address/city', 'bathrooms', 'lotSize', 'yearBuilt', 'homeType', 'price', 'favoriteCount'))
+
+housing2 <- housing2 %>% mutate(priceRange = case_when(
+  price < 100000 ~ "0-100000",
+  price < 200000 ~ "100000-200000",
+  price < 300000 ~ "200000-300000",
+  price < 400000 ~ "300000-400000",
+  price < 500000 ~ "400000-500000",
+  price < 600000 ~ "500000-600000",
+  price < 700000 ~ "600000-700000",
+  price < 800000 ~ "700000-800000",
+  price < 900000 ~ "800000-900000",
+  price > 900000 ~ "900000+"
+))
+
+housing2 <- housing2 %>%
+  drop_na(c('priceRange'))
+
+housing2$`address/city` = toupper(housing2$`address/city`)
+
+housing2$`address/city` = as.factor(housing2$`address/city`)
+
+mult_weibull = survreg(Surv(housing2$daysOnZillow, housing2$sold) ~ `address/city` + 
+                         bathrooms + lotSize + yearBuilt + homeType + price + favoriteCount + 
+                         priceRange,
+                       data = housing2)
+
+summary(mult_weibull)
+
+stepwise_model = stepAIC(mult_weibull, direction = "both")
+
+summary(stepwise_model)
+```
+
+
+```{r}
+weibull_house <- survreg(Surv(daysOnZillow, sold) ~ `address/city`, data = housing2)
+summary(weibull_house)
+
+newdata = data.frame(`housing2[["address/city"]]`= c("PORTLAND", "BEAVERTON"))
+
+predicted_survival <- predict(weibull_house, newdata = newdata, type = "quantile", p = 0.5)
+
+str(housing2)
+```
+
+
+
+```{r}
+price_mod = survreg(Surv(housing2$daysOnZillow, housing2$sold) ~ priceRange, data = housing2)
+
+pred_price = predict(price_mod, newdata = data.frame(priceRange = unique(housing2$priceRange)), type = "quantile", p=seq(0.01,0.99,0.01),se.fit = T)
+
+predFit=tibble(quantile=seq(0.01,0.99,0.01),	as.data.frame(t(pred_price$fit)))
+names(predFit)=c("p",unique(housing2$priceRange))
+
+
+
+km = survfit(Surv(daysOnZillow, sold) ~ priceRange, data = housing2)
+km.ds=tibble(price_range=rep(names(km$strata),times=km$strata),time=km$time,surv=km$surv) %>%
+  	mutate(
+		price_range = str_remove_all(price_range,"priceRange=")
+	)
+
+
+predFit %>%
+  pivot_longer(`300000-400000`:`900000+`, names_to="price_range",values_to = "deathTime") %>%
+  ggplot(aes(x = deathTime, y = rev(p), color = price_range)) + 
+  geom_line(linewidth = 1.1) + 
+  labs(
+    title = "Time to Sale By Price Range",
+    x = "Time to Sale",
+    y = "Probability of Sale"
+  ) + 
+  theme_minimal() + 
+  geom_line(data=km.ds,aes(x=time,y=surv)) +
+  facet_wrap(price_range~.)
+
+summary(price_mod)
+```
+
+
+

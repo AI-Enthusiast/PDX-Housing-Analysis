@@ -1,0 +1,201 @@
+```{r}
+library(survival)
+library(survminer)
+library(tidyverse)
+library(ggplot2)
+library(skimr)
+library(gridExtra)
+```
+
+```{r}
+thePath = 'C:/Users/corma/DataspellProjects/Willamette_University/596 Survial Analysis/Homework/Datasets/'
+pdx_housing = read.csv(paste0(thePath, 'pdx_housing.csv'))
+
+pdx_housing_sold = pdx_housing %>% mutate(status = ifelse(homeStatus == 'RECENTLY_SOLD', 1, 0))
+
+all_homes = pdx_housing_sold %>% select(price, lastSoldPrice, daysOnZillow, dateSold, bathrooms, bedrooms, lotSize, yearBuilt, zestimate, status, pageViewCount, favoriteCount, homeType)
+
+# convert homeType to factor
+# all_homes = all_homes %>% mutate(homeType = as.factor(homeType))
+```
+
+
+```{r}
+skim(pdx_housing)
+```
+
+```{r}
+# a histograph of daysOnZillow
+ggplot(all_homes, aes(x = daysOnZillow)) +
+  geom_histogram(binwidth = 31, fill = "lightblue", color = "black") +
+  ggtitle("Days on Zillow for Sold Homes") +
+  theme_minimal()
+```
+
+```{r}
+# fileter off 'RECENTLY SOLD' in home status and homeType = 'SINGLE_FAMILY'
+km_homes = pdx_housing %>% filter(homeType == 'SINGLE_FAMILY')
+
+# only keep price, lastSoldPrice, daysOnZillow, dateSold, and bathrooms, bedrooms, lotSize, yearBuilt, zestiamate
+km_homes = km_homes %>% select(price, lastSoldPrice, daysOnZillow, dateSold, bathrooms, bedrooms, lotSize, yearBuilt, zestimate, status, pageViewCount, favoriteCount)
+```
+
+
+```{r}
+# create a km plot for daysOnZillow
+fit = survfit(Surv(daysOnZillow, status) ~ 1, data = km_homes)
+ggsurvplot(fit, data = km_homes, pval = TRUE, surv.median.line = "hv", conf.int = TRUE) + ggtitle("KM curve for Single Family Homes")
+```
+
+```{r}
+# create a new col for price range where price < 100000 is '0-100000', price < 200000 is '100000-200000', price < 300000 is '200000-300000', price < 400000 is '300000-400000', price < 500000 is '400000-500000', price < 600000 is '500000-600000', price < 700000 is '600000-700000', price < 800000 is '700000-800000', price < 900000 is '800000-900000', price > 900000 is '900000+'
+price_range_homes = km_homes %>% mutate(priceRange = case_when(
+  price < 100000 ~ "0-100000",
+  price < 200000 ~ "100000-200000",
+  price < 300000 ~ "200000-300000",
+  price < 400000 ~ "300000-400000",
+  price < 500000 ~ "400000-500000",
+  price < 600000 ~ "500000-600000",
+  price < 700000 ~ "600000-700000",
+  price < 800000 ~ "700000-800000",
+  price < 900000 ~ "800000-900000",
+  price > 900000 ~ "900000+"
+))
+```
+
+```{r}
+# create a km of daysOnZillow by price range
+fit_price_range = survfit(Surv(daysOnZillow, status) ~ priceRange, data = price_range_homes)
+ggsurvplot(fit_price_range, data = price_range_homes, surv.median.line = "hv", conf.int = TRUE, pval = TRUE, legend.labs = c("0-100000", "100000-200000", "200000-300000", "300000-400000", "400000-500000", "500000-600000", "600000-700000", "700000-800000", "800000-900000", "900000+")) + ggtitle("KM Curve by Price Range")
+```
+
+```{r}
+# recreate the above but only with 900000+, 800000-900000, 700000-800000, and 300000-400000
+fit_price_range = survfit(Surv(daysOnZillow, status) ~ priceRange, data = price_range_homes %>% filter(priceRange %in% c("900000+", "800000-900000", "700000-800000", "300000-400000")))
+ggsurvplot(fit_price_range, data = price_range_homes %>% filter(priceRange %in% c("900000+", "800000-900000", "700000-800000", "300000-400000")), surv.median.line = "hv", conf.int = TRUE, pval = TRUE, legend.labs = c("300000-400000", "700000-800000", "800000-900000", "900000+")) + ggtitle("KM Curve by Price Range")
+```
+
+```{r}
+
+```
+```{r}
+km_homes = km_homes %>% mutate(decadeBuilt = floor(yearBuilt / 20) * 20)
+# convert decadeBuilt to factor
+km_homes = km_homes %>% mutate(decadeBuilt = as.character(decadeBuilt))
+```
+```{r}
+# unique(km_homes$decadeBuilt) #  [1] "2000" "1980" "1940" "1960" "2020" "1920" "1900" "1880" "1860" "0"
+# unique(all_homes$homeType) # [1] "TOWNHOUSE" "SINGLE_FAMILY" "APARTMENT"  "CONDO" "HOME_TYPE_UNKNOWN"
+```
+
+```{r}
+# facet by decadeBuilt
+# ggsurvplot(fit=fit, data = km_homes, surv.median.line = "hv", conf.int = TRUE, facet.by = "decadeBuilt") + ggtitle("Kaplan-Meier Curve for Days on Zillow by Decade Built for Single Family Homes")
+
+x_1920 = ggplot(km_homes %>% filter(decadeBuilt == "1920"), aes(x = daysOnZillow, color = decadeBuilt)) +
+  geom_density() +
+  ggtitle("1920") + labs(show.legend = FALSE) +
+  theme_minimal()
+x_1940 = ggplot(km_homes %>% filter(decadeBuilt == "1940"), aes(x = daysOnZillow, color = decadeBuilt)) +
+  geom_density() +
+  ggtitle("1940") + labs(show.legend = FALSE) +
+  theme_minimal()
+x_1960 = ggplot(km_homes %>% filter(decadeBuilt == "1960"), aes(x = daysOnZillow, color = decadeBuilt)) +
+  geom_density() +
+  ggtitle("1960") + labs(show.legend = FALSE) +
+  theme_minimal()
+x_1980 = ggplot(km_homes %>% filter(decadeBuilt == "1980"), aes(x = daysOnZillow, color = decadeBuilt)) +
+  geom_density() +
+  ggtitle("1980") + labs(show.legend = FALSE) +
+  theme_minimal()
+x_2000 = ggplot(km_homes %>% filter(decadeBuilt == "2000"), aes(x = daysOnZillow, color = decadeBuilt)) +
+  geom_density() +
+  ggtitle("2000") + labs(show.legend = FALSE) +
+  theme_minimal()
+x_2020 = ggplot(km_homes %>% filter(decadeBuilt == "2020"), aes(x = daysOnZillow, color = decadeBuilt)) +
+  geom_density() +
+  ggtitle("2020") + labs(show.legend = FALSE) +
+  theme_minimal()
+
+grid.arrange(x_1920, x_1940, x_1960, x_1980, x_2000, x_2020, ncol = 2, name = "Decade Built")
+```
+```{r}
+# facet by homeType
+fit_all = survfit(Surv(all_homes$daysOnZillow, all_homes$status) ~ homeType, data = all_homes)
+ggsurvplot(fit_all, data = all_homes, surv.median.line = "hv", conf.int = TRUE, facet.by = "homeType") + ggtitle("Kaplan-Meier Curve for Days on Zillow by Home Type")
+
+
+ggsurvplot(fit_all, data = all_homes, surv.median.line = "hv", conf.int = TRUE, facet.by = "homeType")
+
+```
+```{r}
+# filter for homes with more than 100 views and 10 likes
+desirable_homes = all_homes %>% filter(pageViewCount > 100 & favoriteCount > 10)
+fit_desirable = survfit(Surv(daysOnZillow, status) ~ 1, data = desirable_homes)
+ggsurvplot(fit_desirable, data = desirable_homes, surv.median.line = "hv", conf.int = TRUE) + ggtitle("KM Curve for Desirable Homes")
+```
+```{r}
+# filter off expensive homes with price > 850000
+expensive_homes = all_homes %>% filter(price > 850000)
+fit_expensive = survfit(Surv(daysOnZillow, status) ~ 1, data = expensive_homes)
+ggsurvplot(fit_expensive, data = expensive_homes, surv.median.line = "hv", conf.int = TRUE) + ggtitle("KM Curve for Expensive Homes")
+```
+```{r}
+# filter off homes with more than 4 bedrooms
+large_homes = all_homes %>% filter(bedrooms > 4)
+fit_large = survfit(Surv(daysOnZillow, status) ~ 1, data = large_homes)
+ggsurvplot(fit_large, data = large_homes, surv.median.line = "hv", conf.int = TRUE) + ggtitle("Kaplan-Meier Curve for Days on Zillow for Large Homes")
+```
+```{r}
+# create a parametric survival model
+weibull_model = survreg(Surv(daysOnZillow, status) ~ price +
+  lastSoldPrice +
+  bathrooms +
+  bedrooms +
+  lotSize +
+  yearBuilt +
+  zestimate, data = km_homes, dist = "weibull")
+probvec = seq(0.01, .99, 0.01)
+pred = predict(weibull_model, newdata = km_homes, type = "quantile", p = probvec)
+```
+```{r}
+# print the length of probvec and pred
+```
+
+```{r}
+
+
+# plot the weibull model
+ds3 = tibble(
+  probvec = probvec,
+  pred = pred,
+  pointEst = colMeans(pred$fit),
+  seEst = colMeans(pred$se.fit),
+  # lower=pointEst-seEst,
+  # upper=pointEst+seEst
+)
+
+ds3 %>% ggplot() +
+  geom_line(aes(x = probvec, y = pointEst), color = "darkred", linewidth = 1.2) +
+  # geom_line(aes(x=probvec,y=lower),linetype="dotted") +
+  # geom_line(aes(x=probvec,y=upper),linetype="dotted") +
+  theme_minimal() +
+  labs(title = "Weibull Model for Days on Zillow",
+       x = "Probability",
+       y = "Days on Zillow") +
+  scale_x_continuous(labels = scales::percent_format()) +
+  coord_flip()
+
+```
+
+```{r}
+# create a cox proportional hazards model
+coxph(Surv(daysOnZillow, status) ~ price +
+  lastSoldPrice +
+  bathrooms +
+  bedrooms +
+  lotSize +
+  yearBuilt +
+  zestimate, data = km_homes)
+```
+
