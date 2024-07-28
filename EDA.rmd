@@ -1,0 +1,333 @@
+---
+title: "Portland Housing Market Analysis"
+author: "Cormac Dacker, Tani Shalayuy
+output: html_notebook
+---
+
+# Portland Housing Market Analysis
+## Cormac Dacker, Tani Shalayuy
+
+### Introduction
+#### Getting housing at an affordable price is harder now more than ever. With the rise of the internet, it is easier to find a house, but it is also easier for people to find the same house. This has led to a persived scramble to find
+We wanted to see if there was a way to predict housing prices in Portland, Oregon. We used a dataset from Kaggle that had information on houses sold in Portland from 2021 to 2022. We used this dataset to create a model that could predict housing prices in Portland. We also wanted to see if there was a way to predict the price of a house based on the number of bedrooms, bathrooms, and square footage. We used a dataset from Kaggle that had information on houses sold in Portland from 2014 to 2015. We used this dataset to create a model that could predict housing prices in Portland. We also wanted to see if there was a way to predict the price of a house based on the number of bedrooms, bathrooms, and square footage.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Load libraries
+library(ggplot2)
+library(tidyverse)
+library(xkcd)
+library(gridExtra)
+library(dplyr)
+
+
+# Load data
+root_wd = getwd()
+portland_df = read_csv(paste0(root_wd, "portland_housing.csv"))
+
+# Data cleaning and manipulation
+portland_df = portland_df %>% rename("Pre and Elementary School Distance" = "schools/0/distance",
+                                     "Middle School Distance" = "schools/1/distance",
+                                     "High School Distance" = "schools/2/distance",
+                                     pre_n_elementary_school_level = "schools/0/level",
+                                     middle_school_level = "schools/1/level",
+                                     high_school_level = "schools/2/level",
+                                     city = "address/city", zipcode = "address/zipcode",
+                                     reso_homeType = "resoFacts/homeType")
+# convert relevant cat to numeric
+portland_df$daysOnZillow = as.numeric(portland_df$daysOnZillow)
+portland_df$favoriteCount = as.numeric(portland_df$favoriteCount)
+
+# portland_df_affordable = portland_df %>% filter(price < 1000000)
+# portland_df_affordable = portland_df_affordable %>% filter(reso_homeType == "SingleFamily")
+
+school_df = portland_df %>% pivot_longer(cols = c("Pre and Elementary School Distance", "Middle School Distance", "High School Distance"), names_to = "school_type", values_to = "distance_to_school")
+# turn daysOnZillow into a factor
+school_df$daysOnZillow = as.numeric(school_df$daysOnZillow)
+
+# filter for only sold homes
+sold_homes = portland_df %>% filter(homeStatus == "RECENTLY_SOLD")
+# create a col that is decade built for sold homes
+sold_homes = sold_homes %>% mutate(decadeBuilt = floor(yearBuilt/20)*20)
+# convert decadeBuilt to a factor
+sold_homes = sold_homes %>% mutate(decadeBuilt = as.factor(decadeBuilt))
+# drop houses from before 1900 and NA values
+sold_homes = sold_homes %>% filter(yearBuilt > 1920) %>% drop_na(decadeBuilt)
+
+# a df with dateSold converted to a human readable date
+date_df = sold_homes %>% mutate(dateSold = dateSold %/% 1000) %>% mutate(dateSold = as.POSIXct(dateSold, origin = "1970-01-01")) %>% mutate(dateSold = as.Date(dateSold))
+date_df <- date_df %>%
+  mutate(homeType = recode(homeType, "SINGLE_FAMILY" = "Single Family House",
+                           "APARTMENT" = "Apartment",  "TOWNHOUSE" = "Townhouse"))
+# only keep single family homes, apartments, and townhouses
+date_df = date_df %>% filter(homeType == "Single Family House" | homeType == "Apartment" | homeType == "Townhouse")
+# create a new col weeksold that is the week of the year the house was sold
+date_df = date_df %>% mutate(weeksold = week(dateSold))
+# drop the last week of the year becasue brokers will defaul to the last week of the year if they don't know the exact date
+date_df = date_df %>% filter(weeksold < 51)
+# convert weeksold to factor
+date_df = date_df %>% mutate(weeksold = as.factor(weeksold))
+# create a new col month sold
+date_df = date_df %>% mutate(monthsold = month(dateSold))
+# convert monthsold to factor
+date_df = date_df %>% mutate(monthsold = as.factor(monthsold))
+
+broker_top = portland_df %>% group_by(brokerageName) %>% drop_na(brokerageName) %>%
+  summarize(n = n()) %>%
+  arrange(desc(n)) %>% head(10)
+```
+
+#### If you're around my age the idea of 'starting a family' becomes an increasingly pressing issue. So when buying your home you might want to think ahead and position yourself close to schools. But we all know that the closer you are to a school the more expensive the housing is... or is that really the case?
+```{r}
+ggplot(school_df, aes(x = distance_to_school, y = price)) + geom_point(alpha=.2, position = position_jitter(width = 0.04, height = 0)) +
+  facet_wrap(~school_type,ncol = 1) +
+  labs(title = "Distance to School vs Price", x = "Distance to School", y = "Price") +
+  # add a linear regression line
+  geom_smooth(method = "lm", se = FALSE) +
+  # remove the gab between the x axis and the first tick
+  # scale_x_continuous(expand = c(0, 0)) +
+  xkcdaxis(yrange = c(0, 1000000), xrange = c(0, 5)) +
+  # add font
+  theme(text = element_text(family = "xkcd"))
+```
+#### The most interesting discovery we found blah blah blah
+
+```{r}
+
+xrange = range(min(portland_df$daysOnZillow, na.rm = TRUE), max(portland_df$daysOnZillow, na.rm = TRUE))
+yrange = range(min(portland_df$favoriteCount, na.rm = TRUE), max(portland_df$favoriteCount, na.rm = TRUE))
+ratioxy = diff(xrange)/diff(yrange)
+
+mapping = aes(x, y, scale, ratioxy, angleofspine, anglerighthumerus, anglelefthumerus,
+               anglerightradius, angleleftradius, anglerightleg, angleleftleg, angleofneck,
+               linetype=city)
+dataman = data.frame(x=150, y=100, scale=30, ratioxy=ratioxy, angleofspine=-pi/2, anglerighthumerus=pi/4, anglelefthumerus=pi/2+pi/4,
+                     anglerightradius=2*pi/3, angleleftradius=2*pi/3, anglerightleg=3*pi/2-pi/12, angleleftleg=3*pi/2+pi/12,
+                     angleofneck=runif(1, 3*pi/2-pi/10, 3*pi/2+pi/10), city="Liliput")
+
+# 2. Likes/time on zillow and what facets may affect this
+
+xkcd_like = ggplot() + geom_point(aes(daysOnZillow, favoriteCount), data=portland_df, alpha= 0.8) +
+  xkcdaxis(xrange,yrange) + xkcdman(mapping, dataman) + labs(title = "Likes vs Days on Zillow", x = "Days on Zillow", y = "Likes") +
+# drop the legend
+  theme(legend.position = "none") +
+# add a line fron the head (150,100) to the text line (170,150)
+  annotate("segment", x = 150, xend = 170, y = 120, yend = 150, size = 0.5) +
+# add the text "I'm a like bender!" next to the speach line
+annotate("text", x = 170, y = 150, label = "I'm a like bender!", size = 10, family = "xkcd", hjust = 0, vjust = 0)
+xkcd_like
+```
+
+```{r}
+xrange = range(min(portland_df$daysOnZillow, na.rm = TRUE), 100)
+yrange = range(min(portland_df$favoriteCount, na.rm = TRUE), 100)
+# recreate the graph above but lim 100 x and y
+xkcd_like2 = portland_df %>% filter(daysOnZillow<=100)%>%ggplot() +
+        geom_point(aes(daysOnZillow, favoriteCount), alpha= 0.2, position = position_jitter(width = 0.25, height = 0.25)) +
+        xkcdaxis(xrange,yrange) +
+        # xkcdman(mapping, dataman) +
+        labs(title = "A Closer Look", x = "Days on Zillow", y = "Likes") +
+        # drop the legend
+        theme(legend.position = "none")
+        # add a line fron the head (150,100) to the text line (170,150)
+        # annotate("segment", x = 150, xend = 170, y = 120, yend = 150, size = 0.5) +
+        # add the text "I'm a like bender!" next to the speach line
+        # annotate("text", x = 170, y = 150, label = "I'm a like bender!", size = 10, family = "xkcd", hjust = 0, vjust = 0) + xlim(0, 100) + ylim(0, 100)
+xkcd_like2
+```
+```{r}
+grid.arrange(xkcd_like, xkcd_like2, ncol = 2)
+```
+
+
+```{r}
+mapping = aes(x, y, scale, ratioxy, angleofspine, anglerighthumerus, anglelefthumerus,
+              anglerightradius, angleleftradius, anglerightleg, angleleftleg, angleofneck)
+dataman = data.frame(x=c(150,290),
+                     y=c(750,900),
+                     scale=c(50,50),
+                     ratioxy=.5, angleofspine=c(3*pi/2+pi/15, -pi/2),
+                     anglerighthumerus=c(pi/4, -pi/6),
+                     anglelefthumerus=c(5*pi/6, pi+pi/6),
+                     anglerightradius=c(pi/4, -pi/3),
+                     angleleftradius=c(2*pi/3, -pi/4),
+                     anglerightleg=c(4*pi/3,3*pi/2-pi/12),
+                     angleleftleg=c(5*pi/3,-pi/2),
+                     angleofneck=runif(1, 3*pi/2-pi/10, 3*pi/2+pi/10))
+
+# plot days on zillow for sold homes, as a histogram
+doz_histogram = ggplot(sold_homes, aes(x = daysOnZillow)) +
+  geom_histogram(binwidth = 10, color = "black", fill = "white") +
+  labs(title = "Days on Zillow for Sold Homes", x = "Days on Zillow", y = "Count") +   xkcdaxis(yrange = c(0, 950), xrange = c(0, 400)) + xkcdman(mapping, dataman) +
+  # add font
+  theme(text = element_text(family = "xkcd"))+
+    # add a geom rect between 100 and 200
+  annotate('rect', xmin = 100, xmax=221, ymin=0, ymax=950, alpha=.5, fill = 'grey') +
+# add the anotation "help!!"
+  annotate("text", x = 170, y = 800, label = "Help!!", size = 5, family = "xkcd", hjust = 0, vjust = 0)
+
+doz_histogram
+```
+```{r}
+grid.arrange(xkcd_like, doz_histogram, ncol = 2)
+```
+
+
+
+```{r}
+
+# xkcd style
+ggplot(sold_homes, aes(x = daysOnZillow)) +
+  geom_histogram(binwidth = 10, color = "black", fill = "white") +
+  labs(title = "How does age affect prices?", x = "Days on Zillow", y = "Count") +
+  xkcdaxis(yrange = c(0,300), xrange = c(0, 400)) +
+  # add font
+  theme(text = element_text(family = "xkcd")) + facet_wrap(~decadeBuilt)
+```
+```{r}
+library(plotly)
+# make a scatter plot of price vs avg living area with days on zillow as the frame
+# not in xkdc style
+# ggplotly(ggplot(sold_homes, aes(x = livingArea, y = price, frame = daysOnZillow)) +
+#   geom_point(alpha = 0.5) +
+#   labs(title = "Price vs Living Area", x = "Living Area", y = "Price"))
+
+# do one dot what displays avg living area and avg price for each day on zillow
+ggplotly(date_df %>% group_by(weeksold) %>% summarize(avg_livingArea = mean(livingArea), avg_price = mean(price), avg_lotSize = mean(lotSize), avg_bathrooms = mean(bathrooms), avg_bedrooms = mean(bedrooms), avg_daysOnZillow = mean(daysOnZillow), avg_favoriteCount = mean(favoriteCount), avg_yearBuilt = mean(yearBuilt)) %>%
+  ggplot(aes(x = avg_livingArea, y = avg_price, frame = weeksold, size = avg_lotSize, color=avg_yearBuilt)) +
+  geom_point(alpha = 0.5) +
+  labs(title = "Price vs Living Area", x = "Living Area", y = "Price"))
+
+
+```
+
+
+
+
+```{r}
+xrange = range(0, 10)
+yrange = range(0, 1600)
+ratioxy = diff(xrange)/diff(yrange)
+
+mapping = aes(x, y, scale, ratioxy, angleofspine, anglerighthumerus, anglelefthumerus,
+              anglerightradius, angleleftradius, anglerightleg, angleleftleg, angleofneck)
+dataman = data.frame(x=c(.38,.93),
+                         y=c(500,800),
+                     scale=c(100,100),
+                     ratioxy=ratioxy, angleofspine=c(3*pi/2+pi/15, -pi/2),
+                     anglerighthumerus=c(pi/4, -pi/6),
+                     anglelefthumerus=c(pi/6, pi+pi/6),
+                     anglerightradius=c(pi/3, -pi/3),
+                     angleleftradius=c(pi/4, -pi/4),
+                     anglerightleg=3*pi/2-pi/12,
+                     angleleftleg=-pi/2,
+                     angleofneck=runif(1, 3*pi/2-pi/10, 3*pi/2+pi/10))
+# xkcd style
+
+ggplot(broker_top, aes(x = reorder(brokerageName, n), y = n)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Where Should You Go to Find a House in Portland?", x = "Brokerage", y = "Number of Houses Listed") +
+  xkcdaxis(yrange = c(0, 1600), xrange = c(0, 10)) + xkcdman(mapping, dataman) +
+  # rotate the x axis labels
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  # add the line
+  # add font
+  theme(text = element_text(family = "xkcd")) + theme(plot.title = element_text(size = 28)) +
+ # add a text anotation 'Scar?! Brother?! Help me!'
+  annotate("text", x = 1.5, y = 1000, label = "Scar! Brother, Help me!", size = 7, family = "xkcd") +
+# add another text anotation 'Long live the king!'
+  annotate("text", x = 2.5, y = 800, label = "Long live the king!", size = 7, family = "xkcd")+
+  # xkcdline(aes(xbegin=xbegin,ybegin=ybegin,xend=xend,yend=yend), datalines, xjitteramount = 0.12)
+# add a line from the text to the bar
+  annotate("segment", x = .5, xend = .4, y = 950, yend = 600, size = 0.5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+house <- portland_df %>%
+  mutate(homeType = recode(homeType, "SINGLE_FAMILY" = "Single Family House",
+                           "APARTMENT" = "Apartment",  "TOWNHOUSE" = "Townhouse"))
+# only keep single family homes, apartments, and townhouses
+house <- house %>% filter(homeType == "Single Family House" | homeType == "Apartment" | homeType == "Townhouse")
+mapping <- aes(x, y, scale, ratioxy, angleofspine, anglerighthumerus, anglelefthumerus,
+               anglerightradius, angleleftradius, anglerightleg, angleleftleg, angleofneck)
+dataman <- data.frame(x= c(3000, 5000), y=c(1.5, 1.5), scale = c(30,51) ,ratioxy = ratioxy,
+                      angleofspine = -pi/2 , anglerighthumerus = c(pi/4, -pi/6), anglelefthumerus = c(pi/2 + pi/4, pi +pi/6),
+                      anglerightradius = c(pi/3, -pi/3), angleleftradius = c(pi/3, -pi/3), anglerightleg = 3*pi/2 - pi / 12,
+                      angleleftleg = 3*pi/2 + pi / 12 , angleofneck = runif(1, 3*pi/2-pi/10, 3*pi/2+pi/10))
+
+# xkcd style
+lot_vs_price = ggplot(house, aes(x = lotSize, y = price / 1e6)) +
+  geom_point(alpha = 0.5) +
+  labs(
+    title = "What are your thoughts on Lot Size and Price?",
+    x = "Lot Size in Square Feet",
+    y = "Price in Millions"
+  ) +
+  xlim(0, 6000) +
+  ylim(0, 2) +
+  theme_bw() +
+  geom_smooth(method = lm, se = FALSE) +
+  facet_wrap(~homeType, scales = "free_y") +  # or facet_grid(~homeType)
+  theme(strip.text = element_text(face = "bold")) + xkcdaxis(yrange = c(0, 2), xrange = c(0, 6000)) + xkcdman(mapping, dataman) +
+  # add font
+  theme(text = element_text(family = "xkcd"))
+```
+```{r}
+living_vs_price = ggplot(house, aes(x = livingArea, y = price / 1e6)) +
+        geom_point(alpha = 0.5) +
+        labs(
+                title = "Do you think paying More for a house ensures more Living Space?",
+                x = "Living Area in Square Feet",
+                y = "Price in Millions"
+        ) +
+        xlim(0, 6000) +
+        ylim(0, 2) +
+        theme_bw() +
+        geom_smooth(method = lm, se = FALSE) +
+        facet_wrap(~homeType, scales = "free_y") +  # or facet_grid(~homeType)
+        theme(strip.text = element_text(face = "bold")) + xkcdaxis(yrange = c(0, 2), xrange = c(0, 6000)) +
+        # xkcdman(mapping, dataman) +
+        # add font
+        theme(text = element_text(family = "xkcd"))
+```
+```{r}
+grid.arrange(lot_vs_price, living_vs_price, ncol = 1)
+```
+```{r}
+
+# lets use a violin plot instead
+# ggplot(date_df, aes(x = monthsold, y = price)) +
+#   geom_violin() +
+#   labs(title = "Average Price of Sold Homes by Week", x = "Month", y = "Price") +
+#   # add font
+#   theme(text = element_text(family = "xkcd")) + facet_wrap(~homeType) + theme_bw()
+
+# convert to fully xkcd style
+ggplot(date_df, aes(x = monthsold, y = price)) +
+  geom_violin(fill = "white", color = "black") +
+  labs(title = "Average Price of Sold Homes by Month", x = "Month", y = "Price") +
+  # add font
+  facet_wrap(~homeType) + theme(strip.text = element_text(face = "bold"))+
+  theme_bw() +
+  theme(text = element_text(family = "xkcd"))
+  xkcdaxis(yrange = c(0, 1800000), xrange = c(0, 13))
+```
+```{r}
+
+```
+```{r}
+
+```
+
+```{r}
+
+```
